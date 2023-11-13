@@ -1,0 +1,177 @@
+---
+title: "HW_5"
+author: "Amy Liu"
+date: "2023-11-12"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(knitr)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = .6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## Problem 1
+
+Import dataset:
+
+```{r}
+homicide_data =
+  read_csv("https://raw.githubusercontent.com/washingtonpost/data-homicides/master/homicide-data.csv") %>% 
+  janitor::clean_names()
+
+homicide_data
+```
+The dataset has 12 rows and 52179 observations. Variables include uid,reported_date,victim_last,victim_first,victim_race,victim_age,victim_sex,city,state, lat, lon, and disposition.
+
+* Create a city_state variable (e.g. “Baltimore, MD”) and then summarize within cities to obtain the total number of homicides and the number of unsolved homicides (those for which the disposition is “Closed without arrest” or “Open/No arrest”).
+```{r}
+homicide_tidy_df=
+  homicide_data %>% 
+  mutate(
+    city_state = paste(city, state, sep=", "),
+  ) %>% 
+  group_by(city_state) %>%
+  summarize(total_homicides = n(), 
+            unsolved_homicides = sum(disposition %in% c("Closed without arrest", "Open/No arrest"))
+  )
+
+homicide_tidy_df
+```
+city_state variable is created. The total number of homicides and the number of unsolved homicides are generated.
+
+* For the city of Baltimore, MD, use the prop.test function to estimate the proportion of homicides that are unsolved; save the output of prop.test as an R object, apply the broom::tidy to this object and pull the estimated proportion and confidence intervals from the resulting tidy dataframe.
+
+```{r}
+baltimore_df = 
+  homicide_tidy_df %>% 
+  filter(city_state == "Baltimore, MD")
+
+baltimore_prop_test = 
+  prop.test(baltimore_df$unsolved_homicides, baltimore_df$total_homicides) %>% 
+  broom::tidy()
+```
+The estimated proportion of homicides that are unsolved is 	
+0.6455607, and the confidence interval is (0.6275625, 0.6631599).
+
+* Now run prop.test for each of the cities in your dataset, and extract both the proportion of unsolved homicides and the confidence interval for each. Do this within a “tidy” pipeline, making use of purrr::map, purrr::map2, list columns and unnest as necessary to create a tidy dataframe with estimated proportions and CIs for each city.
+
+```{r}
+prop_test_city <- function(unsolved, total) {
+    prop_test <- prop.test(x = unsolved, n = total)
+    return(prop_test)
+    }
+
+cities_prop = 
+  homicide_tidy_df %>%
+  mutate(
+    prop_test_result = map2(unsolved_homicides, total_homicides, prop_test_city),
+    prop_test = map(prop_test_result, broom::tidy)
+  ) %>%
+  select(city_state, prop_test) %>%
+  unnest(prop_test) %>%
+  select(city_state, estimate, conf.low, conf.high)
+
+cities_prop
+```
+Create a plot
+
+```{r}
+  cities_prop %>% 
+  mutate(city_state = fct_reorder(city_state, estimate)) %>%
+  ggplot(aes(x = city_state, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  
+```
+
+## Problem 2
+
+* Start with a dataframe containing all file names; the list.files function will help
+* Iterate over file names and read in data for each subject using purrr::map and saving the result as a new variable in the dataframe
+* Tidy the result; manipulate file names to include control arm and subject ID, make sure weekly observations are “tidy”, and do any other tidying that’s necessary
+* Make a spaghetti plot showing observations on each subject over time, and comment on differences between groups.
+
+Import Data
+```{r}
+data_files = tibble(list.files("./data")) %>% 
+  mutate(file_list = paste(list.files("./data")))
+
+```
+
+Create function to read data files in the data set 
+```{r, message=FALSE}
+  read_file_csv= function(x) {
+    data = read_csv(paste0("./data/", x)) %>%
+      mutate(file_names = x)
+  }
+  
+longitudinal_study = map_df(data_files$file_list, read_file_csv)
+
+longitudinal_study
+```
+Tidy the result
+
+```{r}
+longitudinal_study_tidy = 
+  longitudinal_study %>% 
+  janitor::clean_names() %>%
+  mutate(group = ifelse(grepl("con", file_names), "Control", "Experimental"), subject_id = row_number()) %>% 
+  pivot_longer(
+    cols = starts_with("week_"),
+    names_to = "week", 
+    values_to = "observation") %>% 
+  select(-file_names) %>% 
+  mutate(week = str_remove(week, "week_"))
+
+longitudinal_study_tidy
+```
+Create a spaghetti plot
+
+```{r}
+longitudinal_study_tidy |> 
+  ggplot(aes(x = week, y = observation, group = subject_id, color = subject_id)) +
+  geom_line() +
+  facet_grid(~group)
+  labs(
+    title = "Control vs. Experimental Observations",
+    x = "week",
+    y = "observation",
+    color = "subject_id"
+    )
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

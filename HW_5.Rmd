@@ -158,6 +158,90 @@ longitudinal_study_tidy |>
     color = "subject_id"
     )
 ```
+The control groups have lower observations than the experimental groups within the 8 weeks. The experimental groups show an uphill increasing trend. The observation for control groups fluctuate more than the experimental groups.
+
+## Problem 3
+
+First set the following design elements:
+* Fix n=30
+* Fix σ=5
+Set μ=0, Generate 5000 datasets from the model
+x∼Normal[μ,σ]
+For each dataset, save μ̂ and the p-value arising from a test of H:μ=0 using α=0.05
+
+```{r}
+sim_test = function(n = 30, mu, sd = 5) {
+  x_vec = rnorm(n, mu, sd)
+  t.test(x_vec) %>%  
+  broom::tidy() %>% 
+  select(mu_hat = estimate, p_value = p.value)
+}
+
+output = vector("list", length = 5000)
+
+for (i in 1:5000) {
+  output[[i]] = sim_test(mu = 0)
+}
+
+sim_result =
+  bind_rows(output)
+
+```
+
+* Repeat the above for μ={1,2,3,4,5,6}
+
+```{r}
+sim_test_mu = 
+  expand_grid(mu_values = c(1,2,3,4,5,6), 
+              iter = 1:5000) %>% 
+  mutate(
+    estimates_df = map(mu_values, ~sim_test(n = 30, mu = .))) %>%
+  unnest(estimates_df)
+
+sim_test_mu
+```
+
+* Make a plot showing the proportion of times the null was rejected (the power of the test) on the y axis and the true value of μ on the x axis. Describe the association between effect size and power.
+
+```{r}
+power_sim_test_mu = 
+  sim_test_mu %>% 
+  mutate(reject_null = p_value < 0.05) %>% 
+  group_by(mu_values) %>% 
+  summarise(power = mean(reject_null))
+
+ggplot(power_sim_test_mu, aes(x = mu_values, y = power)) + 
+  geom_line() +
+  geom_point() +
+  labs(title = "Times the null rejected", x = "True Mean (Mu)", y = "Power")
+
+```
+
+* Make a plot showing the average estimate of μ̂ on the y axis and the true value of μ on the x axis. Make a second plot (or overlay on the first) the average estimate of μ̂ only in samples for which the null was rejected on the y axis and the true value of μ on the x axis. Is the sample average of μ̂ across tests for which the null is rejected approximately equal to the true value of μ
+? Why or why not?
+
+```{r}
+avg_mu = 
+  sim_test_mu %>% 
+  group_by(mu_values) %>% 
+  summarise(avg_mu = mean(mu_hat))
+
+avg_mu_rejected = 
+  sim_test_mu %>% 
+  mutate(reject_null = p_value < 0.05) %>% 
+  filter(reject_null== TRUE) %>% 
+  group_by(mu_values) %>% 
+  summarise(avg_mu_rejected = mean(mu_hat))
+
+ggplot() + 
+  geom_line(data = avg_mu, aes(x = mu_values, y = avg_mu), color = "pink") +
+  geom_line(data = avg_mu_rejected, aes(x = mu_values, y = avg_mu_rejected), color = "skyblue") +
+  geom_point(data = avg_mu, aes(x = mu_values, y = avg_mu), color = "pink") +
+  geom_point(data = avg_mu_rejected, aes(x = mu_values, y = avg_mu_rejected), , color = "skyblue") +
+  labs(title = "Sample average of μ̂ across test", x = "True values of μ", y = "Average estimate of μ")
+```
+
+When the true mu is less than 4, the the average estimate of μ̂ only in samples for which the null was rejected shows a great different from the average estimate of μ. However, if the true mu is greater than 4, the sample average of μ̂ across tests for which the null is rejected approximately equal to the true value of μ. It is because effect size and power is small when the true mu are less than 4, but effect size and power are greater when the true mua are larger than 4.
 
 
 
